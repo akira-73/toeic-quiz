@@ -366,7 +366,8 @@ body {
 .feedback-body    { padding: 16px 18px 18px; background: var(--card); }
 .feedback-example { margin-bottom: 14px; }
 .example-label    { font-size: 10px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--text-hint); font-weight: 700; display: block; margin-bottom: 6px; }
-.feedback-example p { font-size: 14px; line-height: 1.7; color: var(--text-sub); }
+.example-en { font-size: 15px; font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.example-ja { font-size: 13px; color: var(--text-sub); }
 
 /* ── Result ── */
 .screen-result { display: flex; flex-direction: column; align-items: center; }

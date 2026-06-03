@@ -343,8 +343,9 @@ function renderQuiz() {
         </div>
         <div class="feedback-body">
           <div class="feedback-example">
-            <span class="example-label">Example</span>
-            <p>${state.current.example}</p>
+            <span class="example-label">Example Phrase</span>
+            <p class="example-en">${state.current.example}</p>
+            <p class="example-ja">${state.current.exampleJa}</p>
           </div>
           <button class="btn btn-primary" onclick="nextQuestion()">次へ →</button>
         </div>
