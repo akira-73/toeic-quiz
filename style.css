@@ -124,7 +124,7 @@ body {
 /* ── Stats card ── */
 .home-stats {
   display: flex;
-  justify-content: space-around;
+  justify-content: space-evenly;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius);

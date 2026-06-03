@@ -238,10 +238,11 @@ function renderHome() {
   const { days } = state.streak;
 
   const levelOpts = [
-    { value: 'all',          label: 'すべて' },
-    { value: 'basic',        label: '初級'   },
-    { value: 'intermediate', label: '中級'   },
-    { value: 'advanced',     label: '上級'   },
+    { value: 'all', label: 'すべて' },
+    { value: '600', label: '600点'  },
+    { value: '730', label: '730点'  },
+    { value: '860', label: '860点'  },
+    { value: '990', label: '990点'  },
   ];
   const categoryOpts = [
     { value: 'all',       label: 'すべて' },
@@ -264,7 +265,6 @@ function renderHome() {
       <div class="home-title">
         <div class="home-icon">📖</div>
         <h1>TOEIC 単語クイズ</h1>
-        <p class="home-sub">${WORDS.length}語収録</p>
       </div>
 
       ${days > 0 ? `
@@ -285,16 +285,12 @@ function renderHome() {
           <span class="stat-value mistake">${mistakes}</span>
           <span class="stat-label">要復習</span>
         </div>
-        <div class="stat-item">
-          <span class="stat-value">${WORDS.length}</span>
-          <span class="stat-label">総単語数</span>
-        </div>
       </div>
 
       <div class="filter-section">
         <div class="filter-label">問題数</div>
         <div class="chips">${chips('count', countOpts, state.questionCount)}</div>
-        <div class="filter-label filter-spacer">難易度</div>
+        <div class="filter-label filter-spacer">目標スコア</div>
         <div class="chips">${chips('level', levelOpts, state.filterLevel)}</div>
         <div class="filter-label filter-spacer">品詞</div>
         <div class="chips">${chips('category', categoryOpts, state.filterCategory)}</div>
@@ -327,7 +323,7 @@ function renderQuiz() {
   const correctIdx = state.choices.indexOf(state.current.meaning);
   const cc         = state.consecutiveCorrect;
 
-  const levelLabel    = { basic: '初級', intermediate: '中級', advanced: '上級' };
+  const levelLabel    = { '600': '600点', '730': '730点', '860': '860点', '990': '990点' };
   const categoryLabel = { verb: '動詞', noun: '名詞', adjective: '形容詞', other: 'その他' };
 
   const streakBadge = cc >= 2
@@ -426,11 +422,7 @@ function renderResult() {
             <span class="stat-value mistake">${mistakes}</span>
             <span class="stat-label">要復習</span>
           </div>
-          <div class="stat-item">
-            <span class="stat-value">${WORDS.length}</span>
-            <span class="stat-label">総単語数</span>
           </div>
-        </div>
 
         <div class="btn-group">
           <button class="btn btn-primary" onclick="startMode('all')">もう一度</button>
@@ -461,7 +453,7 @@ function renderWords() {
   const mastered = attempted.filter(w => w.pct === 100).length;
   const struggling = attempted.filter(w => w.pct < 50).length;
 
-  const levelLabel    = { basic: '初級', intermediate: '中級', advanced: '上級' };
+  const levelLabel    = { '600': '600点', '730': '730点', '860': '860点', '990': '990点' };
   const categoryLabel = { verb: '動詞', noun: '名詞', adjective: '形容詞', other: 'その他' };
 
   const rows = attempted.length === 0
