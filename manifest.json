@@ -1,0 +1,17 @@
+{
+  "name": "TOEIC 単語クイズ",
+  "short_name": "TOEIC単語",
+  "description": "TOEIC頻出単語クイズアプリ",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f1f5f9",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
