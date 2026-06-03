@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'toeic_quiz_progress';
 const HISTORY_KEY = 'toeic_quiz_history';
+const STREAK_KEY  = 'toeic_quiz_streak';
 
 let state = {
   mode: 'all',
@@ -12,10 +13,14 @@ let state = {
   answered: false,
   selectedIndex: null,
   stats: { correct: 0, total: 0 },
-  progress: {},
+  consecutiveCorrect: 0,   // 連続正解数（セッション内）
+  progress: {},            // { word: { seen, correct, correctCount, totalCount } }
   history: [],
-  screen: 'home',
+  streak: { days: 0, lastDate: null },
+  screen: 'home',          // 'home' | 'quiz' | 'result' | 'history' | 'words'
 };
+
+// ── Storage ───────────────────────────────────────────
 
 function loadStorage() {
   try {
@@ -23,11 +28,35 @@ function loadStorage() {
     if (p) state.progress = JSON.parse(p);
     const h = localStorage.getItem(HISTORY_KEY);
     if (h) state.history = JSON.parse(h);
+    const s = localStorage.getItem(STREAK_KEY);
+    if (s) state.streak = JSON.parse(s);
   } catch (e) {}
 }
 
 function saveProgress() { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.progress)); }
 function saveHistory()  { localStorage.setItem(HISTORY_KEY,  JSON.stringify(state.history));  }
+function saveStreak()   { localStorage.setItem(STREAK_KEY,   JSON.stringify(state.streak));   }
+
+// 今日の日付文字列 "YYYY-MM-DD"
+function today() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// 学習日ストリークを更新（初回解答時に呼ぶ）
+function touchStreak() {
+  const t = today();
+  const { lastDate, days } = state.streak;
+  if (lastDate === t) return; // 今日すでにカウント済み
+
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  state.streak = {
+    days: lastDate === yesterday ? days + 1 : 1,
+    lastDate: t,
+  };
+  saveStreak();
+}
+
+// ── Helpers ───────────────────────────────────────────
 
 function shuffle(arr) {
   const a = [...arr];
@@ -40,8 +69,8 @@ function shuffle(arr) {
 
 function getFilteredWords() {
   return WORDS.filter(w => {
-    const lvlOk = state.filterLevel === 'all'     || w.level    === state.filterLevel;
-    const catOk = state.filterCategory === 'all'  || w.category === state.filterCategory;
+    const lvlOk = state.filterLevel    === 'all' || w.level    === state.filterLevel;
+    const catOk = state.filterCategory === 'all' || w.category === state.filterCategory;
     return lvlOk && catOk;
   });
 }
@@ -63,18 +92,19 @@ function buildQueue() {
   const limit = state.questionCount === 0 ? shuffled.length : Math.min(state.questionCount, shuffled.length);
   state.queue = shuffled.slice(0, limit);
   state.stats = { correct: 0, total: 0 };
+  state.consecutiveCorrect = 0;
   return true;
 }
 
 function nextQuestion() {
   if (state.queue.length === 0) { finishSession(); return; }
-  state.current      = state.queue.pop();
-  state.answered     = false;
+  state.current       = state.queue.pop();
+  state.answered      = false;
   state.selectedIndex = null;
-  state.screen       = 'quiz';
-  const wrongPool    = WORDS.filter(w => w.word !== state.current.word);
-  const wrongs       = shuffle(wrongPool).slice(0, 3).map(w => w.meaning);
-  state.choices      = shuffle([state.current.meaning, ...wrongs]);
+  state.screen        = 'quiz';
+  const wrongPool     = WORDS.filter(w => w.word !== state.current.word);
+  const wrongs        = shuffle(wrongPool).slice(0, 3).map(w => w.meaning);
+  state.choices       = shuffle([state.current.meaning, ...wrongs]);
   render();
 }
 
@@ -83,13 +113,26 @@ function answer(index) {
   state.answered      = true;
   state.selectedIndex = index;
   state.stats.total++;
+
+  // 初回解答時にストリーク更新
+  if (state.stats.total === 1) touchStreak();
+
   const isCorrect = state.choices[index] === state.current.meaning;
+  const prev = state.progress[state.current.word] || { correctCount: 0, totalCount: 0 };
+  state.progress[state.current.word] = {
+    seen: true,
+    correct: isCorrect,
+    correctCount: (prev.correctCount || 0) + (isCorrect ? 1 : 0),
+    totalCount:   (prev.totalCount   || 0) + 1,
+  };
+
   if (isCorrect) {
     state.stats.correct++;
-    state.progress[state.current.word] = { seen: true, correct: true };
+    state.consecutiveCorrect++;
   } else {
-    state.progress[state.current.word] = { seen: true, correct: false };
+    state.consecutiveCorrect = 0;
   }
+
   saveProgress();
   render();
 }
@@ -146,13 +189,14 @@ function countLearned() {
   return WORDS.filter(w => state.progress[w.word]?.correct).length;
 }
 
-// ── Render ────────────────────────────────────────────
+// ── Render helpers ────────────────────────────────────
 
 function render() {
   if (state.screen === 'home')    { renderHome();    return; }
   if (state.screen === 'quiz')    { renderQuiz();    return; }
   if (state.screen === 'result')  { renderResult();  return; }
   if (state.screen === 'history') { renderHistory(); return; }
+  if (state.screen === 'words')   { renderWords();   return; }
 }
 
 function chips(type, options, current) {
@@ -163,6 +207,26 @@ function chips(type, options, current) {
     </button>`).join('');
 }
 
+// クイズ以外の画面で使うボトムナビ
+function bottomNav() {
+  const tabs = [
+    { id: 'home',    icon: '🏠', label: 'ホーム'  },
+    { id: 'words',   icon: '📝', label: '単語帳'  },
+    { id: 'history', icon: '📊', label: '履歴'    },
+  ];
+  return `
+    <nav class="bottom-nav">
+      ${tabs.map(t => `
+        <button class="nav-item ${state.screen === t.id ? 'nav-active' : ''}"
+          onclick="state.screen='${t.id}';render()">
+          <span class="nav-icon">${t.icon}</span>
+          <span class="nav-label">${t.label}</span>
+        </button>`).join('')}
+    </nav>`;
+}
+
+// ── Screens ───────────────────────────────────────────
+
 function renderHome() {
   const app      = document.getElementById('app');
   const mistakes = countMistakes();
@@ -171,6 +235,7 @@ function renderHome() {
   const available = state.questionCount === 0
     ? filtered.length
     : Math.min(state.questionCount, filtered.length);
+  const { days } = state.streak;
 
   const levelOpts = [
     { value: 'all',          label: 'すべて' },
@@ -195,12 +260,21 @@ function renderHome() {
   ];
 
   app.innerHTML = `
-    <div class="home">
+    <div class="screen-home">
       <div class="home-title">
         <div class="home-icon">📖</div>
         <h1>TOEIC 単語クイズ</h1>
         <p class="home-sub">${WORDS.length}語収録</p>
       </div>
+
+      ${days > 0 ? `
+        <div class="streak-banner">
+          <span class="streak-flame">🔥</span>
+          <div>
+            <div class="streak-days">${days}日連続</div>
+            <div class="streak-sub">学習中！この調子で続けよう</div>
+          </div>
+        </div>` : ''}
 
       <div class="home-stats">
         <div class="stat-item">
@@ -220,13 +294,10 @@ function renderHome() {
       <div class="filter-section">
         <div class="filter-label">問題数</div>
         <div class="chips">${chips('count', countOpts, state.questionCount)}</div>
-
         <div class="filter-label filter-spacer">難易度</div>
         <div class="chips">${chips('level', levelOpts, state.filterLevel)}</div>
-
         <div class="filter-label filter-spacer">品詞</div>
         <div class="chips">${chips('category', categoryOpts, state.filterCategory)}</div>
-
         <div class="filter-count">対象 <strong>${available}問</strong>（${filtered.length}語中）</div>
       </div>
 
@@ -238,13 +309,13 @@ function renderHome() {
         </button>
       </div>
 
-      <div class="home-footer">
-        <button class="btn-text" onclick="state.screen='history';render()">📊 スコア履歴</button>
-        ${learned > 0 || mistakes > 0
-          ? `<button class="btn-text danger" onclick="resetProgress()">履歴リセット</button>`
-          : ''}
-      </div>
-    </div>`;
+      ${learned > 0 || mistakes > 0
+        ? `<div style="text-align:center">
+            <button class="btn-text danger" onclick="resetProgress()">履歴リセット</button>
+           </div>`
+        : ''}
+    </div>
+    ${bottomNav()}`;
 }
 
 function renderQuiz() {
@@ -254,18 +325,23 @@ function renderQuiz() {
   const total      = done + remaining + (state.answered ? 0 : 1);
   const progress   = total > 0 ? Math.round((done / total) * 100) : 0;
   const correctIdx = state.choices.indexOf(state.current.meaning);
+  const cc         = state.consecutiveCorrect;
 
   const levelLabel    = { basic: '初級', intermediate: '中級', advanced: '上級' };
   const categoryLabel = { verb: '動詞', noun: '名詞', adjective: '形容詞', other: 'その他' };
+
+  const streakBadge = cc >= 2
+    ? `<div class="quiz-streak">🔥 ${cc}連続正解</div>`
+    : '';
 
   const feedbackHtml = state.answered ? (() => {
     const isCorrect = state.choices[state.selectedIndex] === state.current.meaning;
     return `
       <div class="feedback-card ${isCorrect ? 'feedback-correct' : 'feedback-wrong'}">
         <div class="feedback-header">
-          <div class="feedback-label">${isCorrect ? '正解' : '不正解'}</div>
+          <div class="feedback-label">${isCorrect ? '正解！' : '不正解'}</div>
           <div class="feedback-answer">
-            ${isCorrect ? '' : `<span style="color:var(--text-sub);font-size:13px">正解：</span>`}
+            ${isCorrect ? '' : '<span class="feedback-answer-hint">正解：</span>'}
             <strong>${state.current.meaning}</strong>
           </div>
         </div>
@@ -280,40 +356,45 @@ function renderQuiz() {
   })() : '';
 
   app.innerHTML = `
-    <div class="header">
-      <button class="btn-icon" onclick="if(confirm('終了しますか？')){state.screen='home';render()}">← 終了</button>
-      <div class="mode-badge ${state.mode === 'mistakes' ? 'mode-mistakes' : 'mode-all'}">
-        ${state.mode === 'mistakes' ? '復習' : '全単語'}
+    <div class="screen-quiz">
+      <div class="quiz-header">
+        <button class="btn-icon" onclick="if(confirm('終了しますか？')){state.screen='home';render()}">← 終了</button>
+        <div class="quiz-header-center">
+          <div class="mode-badge ${state.mode === 'mistakes' ? 'mode-mistakes' : 'mode-all'}">
+            ${state.mode === 'mistakes' ? '復習' : '全単語'}
+          </div>
+          ${streakBadge}
+        </div>
+        <div class="score">${state.stats.correct}<span class="score-sep">/</span>${state.stats.total}</div>
       </div>
-      <div class="score">${state.stats.correct} / ${state.stats.total}</div>
-    </div>
 
-    <div class="progress-bar-wrap">
-      <div class="progress-bar" style="width:${progress}%"></div>
-    </div>
-    <div class="progress-label">残り ${remaining + (state.answered ? 0 : 1)} 問</div>
-
-    <div class="card word-card">
-      <div class="word-tags">
-        <span class="tag tag-level">${levelLabel[state.current.level]}</span>
-        <span class="tag tag-category">${categoryLabel[state.current.category]}</span>
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" style="width:${progress}%"></div>
       </div>
-      <div class="word">${state.current.word}</div>
-    </div>
+      <div class="progress-label">残り ${remaining + (state.answered ? 0 : 1)} 問</div>
 
-    <div class="choices">
-      ${state.choices.map((c, i) => {
-        let cls = 'choice';
-        if (state.answered) {
-          if (i === correctIdx)               cls += ' correct';
-          else if (i === state.selectedIndex) cls += ' wrong';
-          else                                cls += ' dimmed';
-        }
-        return `<button class="${cls}" onclick="answer(${i})" ${state.answered ? 'disabled' : ''}>${c}</button>`;
-      }).join('')}
-    </div>
+      <div class="card word-card">
+        <div class="word-tags">
+          <span class="tag tag-level">${levelLabel[state.current.level]}</span>
+          <span class="tag tag-category">${categoryLabel[state.current.category]}</span>
+        </div>
+        <div class="word">${state.current.word}</div>
+      </div>
 
-    ${feedbackHtml}`;
+      <div class="choices">
+        ${state.choices.map((c, i) => {
+          let cls = 'choice';
+          if (state.answered) {
+            if (i === correctIdx)               cls += ' correct';
+            else if (i === state.selectedIndex) cls += ' wrong';
+            else                                cls += ' dimmed';
+          }
+          return `<button class="${cls}" onclick="answer(${i})" ${state.answered ? 'disabled' : ''}>${c}</button>`;
+        }).join('')}
+      </div>
+
+      ${feedbackHtml}
+    </div>`;
 }
 
 function renderResult() {
@@ -321,36 +402,107 @@ function renderResult() {
   const { correct, total } = state.stats;
   const pct      = total > 0 ? Math.round((correct / total) * 100) : 0;
   const mistakes = countMistakes();
+  const { days } = state.streak;
 
   app.innerHTML = `
-    <div class="card result-card">
-      <div class="result-emoji">${pct >= 80 ? '🎉' : pct >= 60 ? '👍' : '💪'}</div>
-      <h2>セッション完了</h2>
-      <div class="result-score">${correct} / ${total}</div>
-      <div class="result-pct">${pct}%</div>
-      <div class="result-stats">
-        <div class="stat-item">
-          <span class="stat-value learned">${countLearned()}</span>
-          <span class="stat-label">習得済み</span>
+    <div class="screen-result">
+      <div class="card result-card">
+        <div class="result-emoji">${pct >= 80 ? '🎉' : pct >= 60 ? '👍' : '💪'}</div>
+        <h2>セッション完了</h2>
+        <div class="result-score">${correct} / ${total}</div>
+        <div class="result-pct">${pct}%</div>
+
+        ${days > 0 ? `
+          <div class="result-streak">
+            🔥 ${days}日連続学習中
+          </div>` : ''}
+
+        <div class="result-stats">
+          <div class="stat-item">
+            <span class="stat-value learned">${countLearned()}</span>
+            <span class="stat-label">習得済み</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value mistake">${mistakes}</span>
+            <span class="stat-label">要復習</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value">${WORDS.length}</span>
+            <span class="stat-label">総単語数</span>
+          </div>
         </div>
-        <div class="stat-item">
-          <span class="stat-value mistake">${mistakes}</span>
-          <span class="stat-label">要復習</span>
-        </div>
-        <div class="stat-item">
-          <span class="stat-value">${WORDS.length}</span>
-          <span class="stat-label">総単語数</span>
+
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="startMode('all')">もう一度</button>
+          ${mistakes > 0
+            ? `<button class="btn btn-warning" onclick="startMode('mistakes')">復習モード（${mistakes}語）</button>`
+            : ''}
+          <button class="btn btn-ghost" onclick="state.screen='home';render()">ホームへ</button>
         </div>
       </div>
-      <div class="btn-group">
-        <button class="btn btn-primary" onclick="startMode('all')">もう一度</button>
-        ${mistakes > 0
-          ? `<button class="btn btn-warning" onclick="startMode('mistakes')">復習モード（${mistakes}語）</button>`
-          : ''}
-        <button class="btn btn-ghost" onclick="state.screen='home';render()">ホームへ</button>
-        <button class="btn-text" onclick="state.screen='history';render()">📊 スコア履歴</button>
+    </div>
+    ${bottomNav()}`;
+}
+
+function renderWords() {
+  const app = document.getElementById('app');
+
+  // 挑戦済みの単語を正答率でソート（低い順）
+  const attempted = WORDS
+    .filter(w => state.progress[w.word]?.totalCount > 0)
+    .map(w => {
+      const p = state.progress[w.word];
+      const pct = Math.round((p.correctCount / p.totalCount) * 100);
+      return { ...w, correctCount: p.correctCount, totalCount: p.totalCount, pct, correct: p.correct };
+    })
+    .sort((a, b) => a.pct - b.pct);
+
+  const total = attempted.length;
+  const mastered = attempted.filter(w => w.pct === 100).length;
+  const struggling = attempted.filter(w => w.pct < 50).length;
+
+  const levelLabel    = { basic: '初級', intermediate: '中級', advanced: '上級' };
+  const categoryLabel = { verb: '動詞', noun: '名詞', adjective: '形容詞', other: 'その他' };
+
+  const rows = attempted.length === 0
+    ? `<div class="empty-state">
+        <div style="font-size:48px;margin-bottom:16px">📝</div>
+        <p>まだ挑戦した単語がありません。<br>クイズを始めてみましょう。</p>
+       </div>`
+    : attempted.map(w => {
+        const barColor = w.pct >= 80 ? 'var(--success)' : w.pct >= 50 ? 'var(--warning)' : 'var(--danger)';
+        return `
+          <div class="word-row">
+            <div class="word-row-main">
+              <div class="word-row-word">${w.word}</div>
+              <div class="word-row-meaning">${w.meaning}</div>
+            </div>
+            <div class="word-row-tags">
+              <span class="tag tag-level">${levelLabel[w.level]}</span>
+              <span class="tag tag-category">${categoryLabel[w.category]}</span>
+            </div>
+            <div class="word-row-stats">
+              <div class="word-row-bar-wrap">
+                <div class="word-row-bar" style="width:${w.pct}%;background:${barColor}"></div>
+              </div>
+              <div class="word-row-pct" style="color:${barColor}">${w.pct}%</div>
+              <div class="word-row-count">${w.correctCount}/${w.totalCount}</div>
+            </div>
+          </div>`;
+      }).join('');
+
+  app.innerHTML = `
+    <div class="screen-words">
+      <div class="page-header">
+        <h2>単語帳</h2>
+        <p class="page-sub">挑戦済み ${total}語 · 苦手 ${struggling}語 · 完璧 ${mastered}語</p>
       </div>
-    </div>`;
+
+      <div class="card words-card">
+        ${rows}
+      </div>
+    </div>
+    ${bottomNav()}`;
 }
 
 function renderHistory() {
@@ -393,11 +545,9 @@ function renderHistory() {
     </div>`).join('');
 
   app.innerHTML = `
-    <div class="history-screen">
-      <div class="header">
-        <button class="btn-icon" onclick="state.screen='home';render()">← 戻る</button>
-        <span style="font-size:15px;font-weight:700">スコア履歴</span>
-        <div></div>
+    <div class="screen-history">
+      <div class="page-header">
+        <h2>スコア履歴</h2>
       </div>
 
       ${h.length === 0 ? `
@@ -418,7 +568,8 @@ function renderHistory() {
           </div>` : ''}
         <div class="card"><div class="history-list">${rows}</div></div>
       `}
-    </div>`;
+    </div>
+    ${bottomNav()}`;
 }
 
 loadStorage();
