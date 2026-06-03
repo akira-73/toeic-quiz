@@ -198,32 +198,6 @@ body {
 .feedback-wrong   .feedback-label { color: var(--danger); }
 .feedback-answer { font-size: 14px; color: var(--text); }
 
-/* ── Word Image ── */
-.word-image-wrap {
-  width: 100%;
-  height: 160px;
-  overflow: hidden;
-  background: #f0f0ed;
-  position: relative;
-}
-.word-image {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-  transition: opacity 0.3s;
-}
-.word-image.loading { opacity: 0; }
-.word-image-placeholder {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  color: var(--text-hint);
-  letter-spacing: 0.5px;
-}
 
 .feedback-body {
   padding: 16px 20px 20px;

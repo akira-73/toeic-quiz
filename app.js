@@ -146,11 +146,6 @@ function countLearned() {
   return WORDS.filter(w => state.progress[w.word]?.correct).length;
 }
 
-// 単語に関連する画像URLを返す（Unsplashの無料ソース）
-function getImageUrl(word) {
-  return `https://source.unsplash.com/featured/640x320/?${encodeURIComponent(word)}`;
-}
-
 // ── Render ────────────────────────────────────────────
 
 function render() {
@@ -265,7 +260,6 @@ function renderQuiz() {
 
   const feedbackHtml = state.answered ? (() => {
     const isCorrect = state.choices[state.selectedIndex] === state.current.meaning;
-    const imgUrl    = getImageUrl(state.current.word);
     return `
       <div class="feedback-card ${isCorrect ? 'feedback-correct' : 'feedback-wrong'}">
         <div class="feedback-header">
@@ -275,17 +269,6 @@ function renderQuiz() {
             <strong>${state.current.meaning}</strong>
           </div>
         </div>
-
-        <div class="word-image-wrap">
-          <div class="word-image-placeholder">Loading...</div>
-          <img class="word-image loading"
-            src="${imgUrl}"
-            alt="${state.current.word}"
-            onload="this.classList.remove('loading');this.previousElementSibling.style.display='none'"
-            onerror="this.parentElement.style.display='none'"
-          >
-        </div>
-
         <div class="feedback-body">
           <div class="feedback-example">
             <span class="example-label">Example</span>
