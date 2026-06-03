@@ -3,8 +3,9 @@ const HISTORY_KEY = 'toeic_quiz_history';
 
 let state = {
   mode: 'all',
-  filterLevel: 'all',     // 'all' | 'basic' | 'intermediate' | 'advanced'
-  filterCategory: 'all',  // 'all' | 'verb' | 'noun' | 'adjective' | 'other'
+  filterLevel: 'all',
+  filterCategory: 'all',
+  questionCount: 20,       // 10 | 20 | 30 | 50 | 100 | 0(=all)
   queue: [],
   current: null,
   choices: [],
@@ -13,8 +14,7 @@ let state = {
   stats: { correct: 0, total: 0 },
   progress: {},
   history: [],
-  sessionComplete: false,
-  screen: 'home',  // 'home' | 'quiz' | 'result' | 'history'
+  screen: 'home',
 };
 
 function loadStorage() {
@@ -53,19 +53,23 @@ function getFilteredWords() {
 
 function buildQueue() {
   const filtered = getFilteredWords();
+
+  let pool;
   if (state.mode === 'mistakes') {
-    const mistakes = filtered.filter(w => {
+    pool = filtered.filter(w => {
       const p = state.progress[w.word];
       return p && p.seen && !p.correct;
     });
-    if (mistakes.length === 0) return false;
-    state.queue = shuffle(mistakes);
+    if (pool.length === 0) return false;
   } else {
-    if (filtered.length === 0) return false;
-    state.queue = shuffle(filtered);
+    pool = filtered;
+    if (pool.length === 0) return false;
   }
+
+  const shuffled = shuffle(pool);
+  const limit = state.questionCount === 0 ? shuffled.length : Math.min(state.questionCount, shuffled.length);
+  state.queue = shuffled.slice(0, limit);
   state.stats = { correct: 0, total: 0 };
-  state.sessionComplete = false;
   return true;
 }
 
@@ -110,6 +114,7 @@ function finishSession() {
     mode: state.mode,
     level: state.filterLevel,
     category: state.filterCategory,
+    questionCount: state.stats.total,
     correct: state.stats.correct,
     total: state.stats.total,
     pct,
@@ -145,6 +150,7 @@ function startMode(mode) {
 function setFilter(type, value) {
   if (type === 'level') state.filterLevel = value;
   if (type === 'category') state.filterCategory = value;
+  if (type === 'count') state.questionCount = Number(value);
   render();
 }
 
@@ -156,25 +162,21 @@ function countMistakes() {
 }
 
 function countLearned() {
-  return WORDS.filter(w => {
-    const p = state.progress[w.word];
-    return p && p.correct;
-  }).length;
+  return WORDS.filter(w => state.progress[w.word]?.correct).length;
 }
 
 // ── Render ───────────────────────────────────────────────
 
 function render() {
-  const app = document.getElementById('app');
-  if (state.screen === 'home') { renderHome(); return; }
-  if (state.screen === 'quiz') { renderQuiz(); return; }
-  if (state.screen === 'result') { renderResult(); return; }
+  if (state.screen === 'home')    { renderHome();    return; }
+  if (state.screen === 'quiz')    { renderQuiz();    return; }
+  if (state.screen === 'result')  { renderResult();  return; }
   if (state.screen === 'history') { renderHistory(); return; }
 }
 
-function filterChips(type, options, current) {
+function chips(type, options, current) {
   return options.map(o => `
-    <button class="chip ${current === o.value ? 'chip-active' : ''}"
+    <button class="chip ${String(current) === String(o.value) ? 'chip-active' : ''}"
       onclick="setFilter('${type}', '${o.value}')">
       ${o.label}
     </button>
@@ -184,21 +186,33 @@ function filterChips(type, options, current) {
 function renderHome() {
   const app = document.getElementById('app');
   const mistakes = countMistakes();
-  const learned = countLearned();
+  const learned  = countLearned();
   const filtered = getFilteredWords();
 
-  const levelOptions = [
-    { value: 'all', label: '全レベル' },
-    { value: 'basic', label: '🟢 初級' },
-    { value: 'intermediate', label: '🟡 中級' },
-    { value: 'advanced', label: '🔴 上級' },
+  const available = state.questionCount === 0
+    ? filtered.length
+    : Math.min(state.questionCount, filtered.length);
+
+  const levelOpts = [
+    { value: 'all',          label: '全レベル' },
+    { value: 'basic',        label: '🟢 初級'  },
+    { value: 'intermediate', label: '🟡 中級'  },
+    { value: 'advanced',     label: '🔴 上級'  },
   ];
-  const categoryOptions = [
-    { value: 'all', label: '全品詞' },
-    { value: 'verb', label: '動詞' },
-    { value: 'noun', label: '名詞' },
-    { value: 'adjective', label: '形容詞' },
-    { value: 'other', label: 'その他' },
+  const categoryOpts = [
+    { value: 'all',       label: '全品詞'  },
+    { value: 'verb',      label: '動詞'    },
+    { value: 'noun',      label: '名詞'    },
+    { value: 'adjective', label: '形容詞'  },
+    { value: 'other',     label: 'その他'  },
+  ];
+  const countOpts = [
+    { value: 10,  label: '10問'  },
+    { value: 20,  label: '20問'  },
+    { value: 30,  label: '30問'  },
+    { value: 50,  label: '50問'  },
+    { value: 100, label: '100問' },
+    { value: 0,   label: '全問'  },
   ];
 
   app.innerHTML = `
@@ -225,16 +239,21 @@ function renderHome() {
       </div>
 
       <div class="filter-section">
-        <div class="filter-label">難易度</div>
-        <div class="chips">${filterChips('level', levelOptions, state.filterLevel)}</div>
-        <div class="filter-label" style="margin-top:10px">品詞</div>
-        <div class="chips">${filterChips('category', categoryOptions, state.filterCategory)}</div>
-        <div class="filter-count">対象: <strong>${filtered.length}語</strong></div>
+        <div class="filter-label">問題数</div>
+        <div class="chips">${chips('count', countOpts, state.questionCount)}</div>
+
+        <div class="filter-label" style="margin-top:14px">難易度</div>
+        <div class="chips">${chips('level', levelOpts, state.filterLevel)}</div>
+
+        <div class="filter-label" style="margin-top:14px">品詞</div>
+        <div class="chips">${chips('category', categoryOpts, state.filterCategory)}</div>
+
+        <div class="filter-count">対象: <strong>${available}問</strong>（${filtered.length}語中）</div>
       </div>
 
       <div class="btn-group">
         <button class="btn btn-primary btn-lg" onclick="startMode('all')">
-          🗂 全単語モードで始める
+          ▶ スタート
         </button>
         <button class="btn btn-warning btn-lg ${mistakes === 0 ? 'btn-disabled' : ''}"
           onclick="${mistakes > 0 ? "startMode('mistakes')" : ''}">
@@ -260,12 +279,12 @@ function renderQuiz() {
   const progress = totalInSession > 0 ? Math.round((done / totalInSession) * 100) : 0;
   const correctIdx = state.choices.indexOf(state.current.meaning);
 
-  const levelLabel = { basic: '🟢 初級', intermediate: '🟡 中級', advanced: '🔴 上級' };
+  const levelLabel    = { basic: '🟢 初級', intermediate: '🟡 中級', advanced: '🔴 上級' };
   const categoryLabel = { verb: '動詞', noun: '名詞', adjective: '形容詞', other: 'その他' };
 
   app.innerHTML = `
     <div class="header">
-      <button class="btn-icon" onclick="state.screen='home';render()">← 戻る</button>
+      <button class="btn-icon" onclick="if(confirm('終了しますか？')){state.screen='home';render()}">← 終了</button>
       <div class="mode-badge ${state.mode === 'mistakes' ? 'mode-mistakes' : 'mode-all'}">
         ${state.mode === 'mistakes' ? '復習' : '全単語'}
       </div>
@@ -289,9 +308,9 @@ function renderQuiz() {
       ${state.choices.map((c, i) => {
         let cls = 'choice';
         if (state.answered) {
-          if (i === correctIdx) cls += ' correct';
+          if (i === correctIdx)          cls += ' correct';
           else if (i === state.selectedIndex) cls += ' wrong';
-          else cls += ' dimmed';
+          else                           cls += ' dimmed';
         }
         return `<button class="${cls}" onclick="answer(${i})" ${state.answered ? 'disabled' : ''}>${c}</button>`;
       }).join('')}
@@ -304,7 +323,7 @@ function renderQuiz() {
         </div>
         <div class="feedback-answer">正解: <strong>${state.current.meaning}</strong></div>
         <div class="feedback-example">
-          <span class="example-label">例文</span>
+          <span class="example-label">Example</span>
           <p>${state.current.example}</p>
         </div>
         <button class="btn btn-primary btn-next" onclick="nextQuestion()">次へ →</button>
@@ -340,7 +359,7 @@ function renderResult() {
         </div>
       </div>
       <div class="btn-group">
-        <button class="btn btn-primary" onclick="startMode('all')">もう一度（全単語）</button>
+        <button class="btn btn-primary" onclick="startMode('all')">もう一度</button>
         ${mistakes > 0
           ? `<button class="btn btn-warning" onclick="startMode('mistakes')">復習モード（${mistakes}語）</button>`
           : ''}
@@ -355,8 +374,8 @@ function renderHistory() {
   const app = document.getElementById('app');
   const h = state.history;
 
-  const modeLabel = { all: '全単語', mistakes: '復習' };
-  const levelLabel = { all: '全', basic: '初級', intermediate: '中級', advanced: '上級' };
+  const modeLabel     = { all: '全単語', mistakes: '復習' };
+  const levelLabel    = { all: '全', basic: '初級', intermediate: '中級', advanced: '上級' };
   const categoryLabel = { all: '全', verb: '動詞', noun: '名詞', adjective: '形容詞', other: 'その他' };
 
   function formatDate(iso) {
@@ -364,17 +383,17 @@ function renderHistory() {
     return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
   }
 
-  const graphBars = h.slice(0, 10).reverse().map((r, i) => {
+  const graphBars = h.slice(0, 10).reverse().map(r => {
     const color = r.pct >= 80 ? 'var(--success)' : r.pct >= 60 ? 'var(--warning)' : 'var(--danger)';
+    const glow  = r.pct >= 80 ? 'var(--success-glow)' : r.pct >= 60 ? 'var(--gold-glow)' : 'var(--danger-glow)';
     return `
       <div class="bar-wrap">
         <div class="bar-pct">${r.pct}%</div>
         <div class="bar-col">
-          <div class="bar" style="height: ${r.pct}%; background: ${color}"></div>
+          <div class="bar" style="height:${r.pct}%;background:${color};box-shadow:0 0 8px ${glow}"></div>
         </div>
         <div class="bar-label">${formatDate(r.date)}</div>
-      </div>
-    `;
+      </div>`;
   }).join('');
 
   const rows = h.map(r => `
@@ -384,33 +403,31 @@ function renderHistory() {
         <span class="tag tag-mode">${modeLabel[r.mode] || r.mode}</span>
         <span class="tag tag-lv">${levelLabel[r.level] || r.level}</span>
         <span class="tag tag-cat">${categoryLabel[r.category] || r.category}</span>
+        <span class="tag tag-lv">${r.questionCount || r.total}問</span>
       </div>
       <div class="history-score ${r.pct >= 80 ? 'score-good' : r.pct >= 60 ? 'score-mid' : 'score-bad'}">
         ${r.correct}/${r.total} <span class="score-pct">${r.pct}%</span>
       </div>
-    </div>
-  `).join('');
+    </div>`).join('');
 
   app.innerHTML = `
     <div class="history-screen">
       <div class="header">
         <button class="btn-icon" onclick="state.screen='home';render()">← 戻る</button>
-        <h2 style="font-size:17px">スコア履歴</h2>
+        <h2 style="font-size:17px;font-weight:800">スコア履歴</h2>
         <div></div>
       </div>
 
       ${h.length === 0 ? `
         <div class="empty-state">
-          <div style="font-size:48px;margin-bottom:12px">📊</div>
+          <div style="font-size:52px;margin-bottom:16px">📊</div>
           <p>まだ記録がありません。<br>クイズを始めてみましょう！</p>
         </div>
       ` : `
         ${h.length >= 2 ? `
           <div class="card graph-card">
             <div class="graph-title">直近 ${Math.min(h.length, 10)} 回の正答率</div>
-            <div class="graph">
-              ${graphBars}
-            </div>
+            <div class="graph">${graphBars}</div>
             <div class="graph-legend">
               <span class="legend-dot" style="background:var(--success)"></span>80%以上
               <span class="legend-dot" style="background:var(--warning);margin-left:8px"></span>60%以上
@@ -418,12 +435,7 @@ function renderHistory() {
             </div>
           </div>
         ` : ''}
-
-        <div class="card">
-          <div class="history-list">
-            ${rows}
-          </div>
-        </div>
+        <div class="card"><div class="history-list">${rows}</div></div>
       `}
     </div>
   `;
