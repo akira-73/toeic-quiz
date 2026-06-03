@@ -1,3 +1,12 @@
+function speak(text) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'en-US';
+  u.rate = 0.9;
+  window.speechSynthesis.speak(u);
+}
+
 const STORAGE_KEY = 'toeic_quiz_progress';
 const HISTORY_KEY = 'toeic_quiz_history';
 const STREAK_KEY  = 'toeic_quiz_streak';
@@ -343,7 +352,10 @@ function renderQuiz() {
         </div>
         <div class="feedback-body">
           <div class="feedback-example">
-            <span class="example-label">Example Phrase</span>
+            <div class="example-header">
+              <span class="example-label">Example Phrase</span>
+              <button class="speak-btn speak-btn-sm" onclick="speak('${state.current.example.replace(/'/g, "\\'")}')">🔊</button>
+            </div>
             <p class="example-en">${state.current.example}</p>
             <p class="example-ja">${state.current.exampleJa}</p>
           </div>
@@ -376,6 +388,7 @@ function renderQuiz() {
           <span class="tag tag-category">${categoryLabel[state.current.category]}</span>
         </div>
         <div class="word">${state.current.word}</div>
+        <button class="speak-btn" onclick="speak('${state.current.word.replace(/'/g, "\\'")}')">🔊</button>
       </div>
 
       <div class="choices">
